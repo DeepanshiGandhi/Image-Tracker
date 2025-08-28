@@ -8,3 +8,4 @@ shortuuid
 requests
 scikit-learn
 werkzeug
+geoip2

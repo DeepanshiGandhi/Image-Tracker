@@ -39,9 +39,11 @@ limiter.init_app(app)
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    # Add 'user_id' column to the 'hits' table if it doesn't exist
     c.execute('''CREATE TABLE IF NOT EXISTS hits (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         track_id TEXT,
+        user_id TEXT,  -- Added column
         ip TEXT,
         ua TEXT,
         ts TEXT,
@@ -56,12 +58,13 @@ def init_db():
 
 init_db()
 
-def insert_hit(track_id, ip, ua, lat=None, lon=None, city=None, region=None, country=None):
+def insert_hit(track_id, user_id, ip, ua, lat=None, lon=None, city=None, region=None, country=None):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    # Updated INSERT statement to include 'user_id'
     c.execute(
-        'INSERT INTO hits (track_id, ip, ua, ts, lat, lon, city, region, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        (track_id, ip, ua, datetime.datetime.utcnow().isoformat()+"Z", lat, lon, city, region, country)
+        'INSERT INTO hits (track_id, user_id, ip, ua, ts, lat, lon, city, region, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        (track_id, user_id, ip, ua, datetime.datetime.utcnow().isoformat()+"Z", lat, lon, city, region, country)
     )
     conn.commit()
     conn.close()
@@ -69,7 +72,8 @@ def insert_hit(track_id, ip, ua, lat=None, lon=None, city=None, region=None, cou
 def fetch_hits(limit=1000):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute('SELECT id, track_id, ip, ua, ts, lat, lon, city, region, country FROM hits ORDER BY id DESC LIMIT ?', (limit,))
+    # Updated SELECT statement to include 'user_id'
+    c.execute('SELECT id, track_id, user_id, ip, ua, ts, lat, lon, city, region, country FROM hits ORDER BY id DESC LIMIT ?', (limit,))
     rows = c.fetchall()
     conn.close()
     return rows
@@ -240,7 +244,8 @@ def proxy_image(track_id, filename):
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
     ua = request.headers.get("User-Agent","")
     lat, lon, city, region, country = geo_ip(ip)
-    insert_hit(track_id, ip, ua, lat, lon, city, region, country)
+    user_id = session.get("user_id", "anonymous")
+    insert_hit(track_id, user_id, ip, ua, lat, lon, city, region, country)
     fpath = os.path.join(OUTDIR, filename)
     if not os.path.exists(fpath):
         return "Not found", 404
@@ -252,7 +257,8 @@ def track(track_id):
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
     ua = request.headers.get("User-Agent","")
     lat, lon, city, region, country = geo_ip(ip)
-    insert_hit(track_id, ip, ua, lat, lon, city, region, country)
+    user_id = session.get("user_id", "anonymous")
+    insert_hit(track_id, user_id, ip, ua, lat, lon, city, region, country)
     png1 = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82'
     return Response(png1, mimetype="image/png")
 
@@ -261,7 +267,8 @@ def dl_pdf(track_id, pdfname):
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
     ua = request.headers.get("User-Agent","")
     lat, lon, city, region, country = geo_ip(ip)
-    insert_hit(track_id, ip, ua, lat, lon, city, region, country)
+    user_id = session.get("user_id", "anonymous")
+    insert_hit(track_id, user_id, ip, ua, lat, lon, city, region, country)
 
     path = os.path.join(OUTDIR, pdfname)
     if not os.path.exists(path):
@@ -290,16 +297,28 @@ def download_generated(name):
 def logs():
     if not session.get("admin"):
         return redirect(url_for("login"))
-    rows = fetch_hits()
+
+    rows = fetch_hits()  # get logs from DB
+
     safe_rows = []
     for r in rows:
         safe_rows.append({
-            "ip": r[2],
-            "lat": float(r[5]) if r[5] is not None else 0.0,
-            "lon": float(r[6]) if r[6] is not None else 0.0,
-            "timestamp": r[4]
+            "id": r[0],
+            "track_id": r[1],
+            "user_id": r[2],
+            "ip": r[3],
+            "ua": r[4],  # user agent
+            "ts": r[5],  # timestamp
+            "lat": float(r[6]) if r[6] is not None else "N/A",
+            "lon": float(r[7]) if r[7] is not None else "N/A",
+            "city": r[8] if r[8] is not None else "N/A",
+            "region": r[9] if r[9] is not None else "N/A",
+            "country": r[10] if r[10] is not None else "N/A"
         })
-    return render_template("logs_map.html", rows=json.dumps(safe_rows))
+
+    # Pass the Python list 'safe_rows' to the new template
+    # Ensure you are rendering a template that contains the table structure.
+    return render_template("logs.html", table_data=safe_rows)
 
 @app.route("/api/logs")
 def api_logs():
@@ -309,8 +328,17 @@ def api_logs():
     out = []
     for r in rows:
         out.append({
-            "id": r[0], "track_id": r[1], "ip": r[2], "ua": r[3], "ts": r[4],
-            "lat": r[5], "lon": r[6], "city": r[7], "region": r[8], "country": r[9]
+            "id": r[0], 
+            "track_id": r[1], 
+            "user_id": r[2], # Added this line
+            "ip": r[3], 
+            "ua": r[4], 
+            "ts": r[5],
+            "lat": r[6], 
+            "lon": r[7], 
+            "city": r[8], 
+            "region": r[9], 
+            "country": r[10]
         })
     return jsonify(out)
 
