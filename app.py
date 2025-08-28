@@ -1,14 +1,13 @@
 import os
 import sqlite3
 import datetime
-import json
 import shortuuid
 import requests
 from PIL import Image
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    send_file, jsonify, session, flash, Response
+    send_file, jsonify, session, flash
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_limiter import Limiter
@@ -18,7 +17,6 @@ from flask_limiter.util import get_remote_address
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
-
 
 # ======================================================
 # ------------- Configuration --------------------------
@@ -42,20 +40,17 @@ limiter = Limiter(
 )
 limiter.init_app(app)
 
-
 # ======================================================
 # ------------- Database Helpers -----------------------
 # ======================================================
 
 def init_db():
-    """Initialize SQLite tables."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
 
-    # hits table
     c.execute('''CREATE TABLE IF NOT EXISTS hits (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        track_id TEXT,
+        doc_ref TEXT,
         user_id TEXT,
         ip TEXT,
         ua TEXT,
@@ -67,7 +62,6 @@ def init_db():
         country TEXT
     )''')
 
-    # users table
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
@@ -77,37 +71,31 @@ def init_db():
     conn.commit()
     conn.close()
 
-
-def insert_hit(track_id, user_id, ip, ua, lat=None, lon=None,
+def insert_hit(doc_ref, user_id, ip, ua, lat=None, lon=None,
                city=None, region=None, country=None):
-    """Insert a hit into the DB."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''INSERT INTO hits
-        (track_id, user_id, ip, ua, ts, lat, lon, city, region, country)
+        (doc_ref, user_id, ip, ua, ts, lat, lon, city, region, country)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-        (track_id, user_id, ip, ua,
+        (doc_ref, user_id, ip, ua,
          datetime.datetime.utcnow().isoformat()+"Z",
          lat, lon, city, region, country)
     )
     conn.commit()
     conn.close()
 
-
 def fetch_hits(limit=1000):
-    """Fetch latest logs from DB."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute('''SELECT id, track_id, user_id, ip, ua, ts,
+    c.execute('''SELECT id, doc_ref, user_id, ip, ua, ts,
                         lat, lon, city, region, country
                  FROM hits ORDER BY id DESC LIMIT ?''', (limit,))
     rows = c.fetchall()
     conn.close()
     return rows
 
-
 init_db()
-
 
 # ======================================================
 # ------------- Geolocation Helper ---------------------
@@ -131,7 +119,6 @@ except ImportError:
     GEO_DB = None
 
     def geo_ip(ip):
-        """Fallback using ip-api.com"""
         try:
             r = requests.get(
                 f"http://ip-api.com/json/{ip}?fields=status,message,lat,lon,city,regionName,country",
@@ -144,18 +131,15 @@ except ImportError:
             pass
         return None, None, None, None, None
 
-
 # ======================================================
 # ------------- PDF Helper -----------------------------
 # ======================================================
 
-def create_pdf_with_pixel(image_path: str, pdf_path: str,
-                          page_size=letter, tracking_url: str = None):
-    """Create a PDF with image and hidden tracking pixel."""
+def create_pdf_with_clickable_image(image_path: str, pdf_path: str,
+                                    page_size=letter, url: str = None):
     c = canvas.Canvas(pdf_path, pagesize=page_size)
     width, height = page_size
 
-    # Draw base image
     img = ImageReader(image_path)
     iw, ih = img.getSize()
     margin = 36
@@ -166,17 +150,11 @@ def create_pdf_with_pixel(image_path: str, pdf_path: str,
     y = (height - draw_h) / 2
     c.drawImage(img, x, y, draw_w, draw_h, preserveAspectRatio=True, mask='auto')
 
-    # Tracking pixel
-    if tracking_url:
-        try:
-            pixel = ImageReader(tracking_url)
-            c.drawImage(pixel, 1, 1, 1, 1, mask='auto')
-        except Exception:
-            pass
+    if url:
+        c.linkURL(url, (x, y, x + draw_w, y + draw_h), relative=0)
 
     c.showPage()
     c.save()
-
 
 # ======================================================
 # ------------- Routes ---------------------------------
@@ -186,9 +164,7 @@ def create_pdf_with_pixel(image_path: str, pdf_path: str,
 def index():
     return render_template("index.html", logged_in=session.get("admin", False))
 
-
 # ------------------- Admin Login ----------------------
-
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -198,15 +174,12 @@ def login():
         flash("Wrong password", "error")
     return render_template("login.html")
 
-
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("index"))
 
-
 # ------------------- User Auth ------------------------
-
 @app.route("/user_login", methods=["GET", "POST"])
 def user_login():
     if request.method == "POST":
@@ -229,7 +202,6 @@ def user_login():
             return redirect(url_for("user_login"))
 
     return render_template("user_login.html")
-
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -256,9 +228,7 @@ def register():
 
     return render_template("register.html")
 
-
 # ------------------- File Maker -----------------------
-
 @app.route("/make", methods=["GET", "POST"])
 def make():
     if not session.get("admin"):
@@ -269,111 +239,75 @@ def make():
         file = request.files.get("image")
         base_image = Image.open(file.stream).convert("RGBA") if file and file.filename else None
 
-        track_id = shortuuid.uuid()[:8]
+        doc_ref = shortuuid.uuid()[:8]
 
-        # === SVG Mode ===
         if mode == "svg":
-            tracked_url = url_for("track", track_id=track_id, _external=True)
+            url = url_for("clickable_redirect", doc_ref=doc_ref, _external=True)
             svg = f'''<?xml version="1.0" encoding="utf-8"?>
             <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
               <rect width="100%" height="100%" fill="#fff"/>
-              <text x="10" y="20" font-size="14">Tracked SVG ID: {track_id}</text>
-              <image x="0" y="0" width="1" height="1" href="{tracked_url}" />
+              <text x="10" y="20" font-size="14">Document Ref: {doc_ref}</text>
+              <image x="0" y="0" width="1" height="1" href="{url}" />
             </svg>'''
-
-            fname = f"tracked_{track_id}.svg"
+            fname = f"document_{doc_ref}.svg"
             with open(os.path.join(OUTDIR, fname), "w", encoding="utf-8") as f:
                 f.write(svg)
+            return render_template("made_file.html",
+                                   doc_ref=doc_ref,
+                                   file_url=url_for("download_generated", name=fname, _external=True),
+                                   file_kind="SVG",
+                                   pdf_url=None)
 
-            return render_template(
-                "made_file.html",
-                track_id=track_id,
-                wrapper_url=url_for("download_generated", name=fname, _external=True),
-                file_url=url_for("download_generated", name=fname, _external=True),
-                file_kind="SVG",
-                pdf_url=None
-            )
-
-        # === PNG Mode ===
-        fname = f"tracked_{track_id}.png"
+        # PNG Mode
+        fname = f"document_{doc_ref}.png"
         fpath = os.path.join(OUTDIR, fname)
 
         if base_image is None:
             base_image = Image.new("RGBA", (800, 600), (255, 255, 255, 255))
         base_image.save(fpath, "PNG")
 
-        tracked_url = url_for('proxy_image', track_id=track_id, filename=fname, _external=True)
-
-        # Create PDF with tracking pixel
-        pdf_name = f"wrapped_{track_id}.pdf"
+        url = url_for('clickable_redirect', doc_ref=doc_ref, _external=True)
+        pdf_name = f"document_{doc_ref}.pdf"
         pdf_path = os.path.join(OUTDIR, pdf_name)
-        js_ping_url = url_for('track', track_id=track_id, _external=True)
-        create_pdf_with_pixel(fpath, pdf_path, page_size=letter, tracking_url=js_ping_url)
+        create_pdf_with_clickable_image(fpath, pdf_path, page_size=letter, url=url)
 
-        return render_template(
-            "made_file.html",
-            track_id=track_id,
-            wrapper_url=url_for("download_generated", name=fname, _external=True),
-            file_url=url_for("download_generated", name=fname, _external=True),
-            file_kind="PNG",
-            pdf_url=url_for("download_generated", name=pdf_name, _external=True),
-            dl_pdf_url=url_for("dl_pdf", track_id=track_id, pdfname=pdf_name, _external=True)
-        )
+        return render_template("made_file.html",
+                               doc_ref=doc_ref,
+                               file_url=url_for("download_generated", name=fname, _external=True),
+                               file_kind="PNG",
+                               pdf_url=url_for("download_generated", name=pdf_name, _external=True),
+                               dl_pdf_url=url_for("dl_pdf", doc_ref=doc_ref, pdfname=pdf_name, _external=True))
 
     return render_template("make.html")
 
-
-# ------------------- Tracking -------------------------
-
-@app.route("/proxy_image/<track_id>/<filename>")
-def proxy_image(track_id, filename):
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
-    ua = request.headers.get("User-Agent", "")
-    lat, lon, city, region, country = geo_ip(ip)
-    user_id = session.get("user_id", "anonymous")
-
-    insert_hit(track_id, user_id, ip, ua, lat, lon, city, region, country)
-
-    fpath = os.path.join(OUTDIR, filename)
-    if not os.path.exists(fpath):
-        return "Not found", 404
-    return send_file(fpath, mimetype="image/png")
-
-
-@app.route("/track/<track_id>")
+# ------------------- Clickable Redirect ----------------
+@app.route("/click/<doc_ref>")
 @limiter.limit("60 per minute")
-def track(track_id):
+def clickable_redirect(doc_ref):
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
     ua = request.headers.get("User-Agent", "")
     lat, lon, city, region, country = geo_ip(ip)
     user_id = session.get("user_id", "anonymous")
 
-    insert_hit(track_id, user_id, ip, ua, lat, lon, city, region, country)
+    insert_hit(doc_ref, user_id, ip, ua, lat, lon, city, region, country)
 
-    # Return a 1x1 transparent PNG
-    pixel = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01' \
-            b'\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89' \
-            b'\x00\x00\x00\nIDATx\x9cc\x00\x00\x00\x02\x00\x01' \
-            b'\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB\x82'
-    return Response(pixel, mimetype="image/png")
-
+    # Redirect to a friendly landing page
+    return redirect("https://your-site.com/thank-you")  # replace with your real page
 
 # ------------------- Downloads ------------------------
-
-@app.route("/dl_pdf/<track_id>/<pdfname>")
-def dl_pdf(track_id, pdfname):
+@app.route("/dl_pdf/<doc_ref>/<pdfname>")
+def dl_pdf(doc_ref, pdfname):
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
     ua = request.headers.get("User-Agent", "")
     lat, lon, city, region, country = geo_ip(ip)
     user_id = session.get("user_id", "anonymous")
 
-    insert_hit(track_id, user_id, ip, ua, lat, lon, city, region, country)
+    insert_hit(doc_ref, user_id, ip, ua, lat, lon, city, region, country)
 
     path = os.path.join(OUTDIR, pdfname)
     if not os.path.exists(path):
         return "Not found", 404
     return send_file(path, as_attachment=True, download_name=pdfname, mimetype="application/pdf")
-
 
 @app.route("/download_generated/<name>")
 def download_generated(name):
@@ -392,9 +326,7 @@ def download_generated(name):
 
     return send_file(path, as_attachment=True, download_name=name, mimetype=mt)
 
-
 # ------------------- Logs -----------------------------
-
 @app.route("/logs")
 def logs():
     if not session.get("admin"):
@@ -403,7 +335,7 @@ def logs():
     rows = fetch_hits()
     safe_rows = [
         {
-            "id": r[0], "track_id": r[1], "user_id": r[2],
+            "id": r[0], "doc_ref": r[1], "user_id": r[2],
             "ip": r[3], "ua": r[4], "ts": r[5],
             "lat": float(r[6]) if r[6] is not None else "N/A",
             "lon": float(r[7]) if r[7] is not None else "N/A",
@@ -416,7 +348,6 @@ def logs():
 
     return render_template("logs.html", table_data=safe_rows)
 
-
 @app.route("/api/logs")
 def api_logs():
     if not session.get("admin"):
@@ -425,7 +356,7 @@ def api_logs():
     rows = fetch_hits()
     out = [
         {
-            "id": r[0], "track_id": r[1], "user_id": r[2],
+            "id": r[0], "doc_ref": r[1], "user_id": r[2],
             "ip": r[3], "ua": r[4], "ts": r[5],
             "lat": r[6], "lon": r[7], "city": r[8],
             "region": r[9], "country": r[10]
@@ -433,7 +364,6 @@ def api_logs():
         for r in rows
     ]
     return jsonify(out)
-
 
 # ======================================================
 # ------------- Run App --------------------------------
