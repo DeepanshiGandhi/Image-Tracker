@@ -20,8 +20,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 
 # ------------- config -------------
+ADMIN_ID = "admin"
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASS", "admin123")
+
 APP_SECRET = os.environ.get("SECRET_KEY", "dev_secret_change_this")
-ADMIN_PASS = os.environ.get("ADMIN_PASS", "admin")
 DB_FILE = "hits.db"
 OUTDIR = "generated"
 os.makedirs(OUTDIR, exist_ok=True)
@@ -37,7 +39,7 @@ limiter = Limiter(
 )
 limiter.init_app(app)
 
-# ------------- DB helpers -------------
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -70,16 +72,18 @@ def init_db():
 
 init_db()
 
+
 def insert_hit(track_id, user_id, ip, ua, lat=None, lon=None, city=None, region=None, country=None):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     # Updated INSERT statement to include 'user_id'
     c.execute(
         'INSERT INTO hits (track_id, user_id, ip, ua, ts, lat, lon, city, region, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        (track_id, user_id, ip, ua, datetime.datetime.utcnow().isoformat()+"Z", lat, lon, city, region, country)
+        (track_id, user_id, ip, ua, datetime.datetime.utcnow().isoformat() + "Z", lat, lon, city, region, country)
     )
     conn.commit()
     conn.close()
+
 
 def fetch_hits(limit=1000):
     conn = sqlite3.connect(DB_FILE)
@@ -90,10 +94,12 @@ def fetch_hits(limit=1000):
     conn.close()
     return rows
 
+
 # ------------- geolocation helper (MaxMind + fallback) -------------
 try:
     import geoip2.database
     GEO_DB = geoip2.database.Reader("GeoLite2-City.mmdb")
+
     def geo_ip(ip):
         try:
             response = GEO_DB.city(ip)
@@ -106,8 +112,9 @@ try:
             )
         except Exception:
             return None, None, None, None, None
-except ImportError:
+except Exception:
     GEO_DB = None
+
     def geo_ip(ip):
         """Fallback: use ip-api.com"""
         try:
@@ -122,6 +129,7 @@ except ImportError:
             pass
         return None, None, None, None, None
 
+
 # ------------- PDF helper (embed tracking PNG) -------------
 def create_pdf_with_pixel(image_path: str, pdf_path: str, page_size=letter, tracking_url: str = None):
     """
@@ -134,7 +142,7 @@ def create_pdf_with_pixel(image_path: str, pdf_path: str, page_size=letter, trac
     img = ImageReader(image_path)
     iw, ih = img.getSize()
     margin = 36  # half inch margins
-    max_w, max_h = width - 2*margin, height - 2*margin
+    max_w, max_h = width - 2 * margin, height - 2 * margin
     scale = min(max_w / iw, max_h / ih)
     draw_w, draw_h = iw * scale, ih * scale
     x = (width - draw_w) / 2
@@ -144,6 +152,7 @@ def create_pdf_with_pixel(image_path: str, pdf_path: str, page_size=letter, trac
     # Embed tracking pixel if URL provided
     if tracking_url:
         try:
+            # ImageReader accepts a URL in many reportlab versions; if it fails, we silently skip
             pixel = ImageReader(tracking_url)
             c.drawImage(pixel, 1, 1, 1, 1, mask='auto')
         except Exception:
@@ -153,55 +162,47 @@ def create_pdf_with_pixel(image_path: str, pdf_path: str, page_size=letter, trac
     c.showPage()
     c.save()
 
+
 # ------------- routes -------------
 @app.route("/")
 def index():
-    return render_template("index.html", logged_in=session.get("admin", False))
+    return render_template("index.html")
 
-@app.route("/login", methods=["GET","POST"])
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        if request.form.get("password","") == ADMIN_PASS:
+        username = request.form["username"]
+        password = request.form["password"]
+
+        # ✅ Check admin login
+        if username == ADMIN_ID and password == ADMIN_PASSWORD:
+            session["username"] = username
+            session["user_id"] = "admin"
             session["admin"] = True
+            session["role"] = "admin"
+            flash("Admin logged in successfully!", "success")
             return redirect(url_for("make"))
-        flash("Wrong password", "error")
-    return render_template("login.html")
 
-# In your app.py file
-# In your app.py file
-
-@app.route("/user_login", methods=["GET", "POST"])
-def user_login():
-    if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-
+        # ✅ Check normal user login from DB
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT id, password FROM users WHERE username = ?", (username,))
+        c.execute("SELECT id, username, password FROM users WHERE username=?", (username,))
         user = c.fetchone()
         conn.close()
 
-        if user and check_password_hash(user[1], password):
-            session["user_id"] = user[0]
-            session["username"] = username
-            flash(f"Welcome back, {username}!", "success")
-            return redirect(url_for("index"))
+        if user and check_password_hash(user[2], password):
+            session["username"] = user[1]
+            session["user_id"] = str(user[0])
+            session["admin"] = False
+            session["role"] = "user"
+            flash("User logged in successfully!", "success")
+            return redirect(url_for("make"))
         else:
-            flash("Invalid username or password", "error")
-            return redirect(url_for("user_login"))
+            flash("Invalid username or password", "danger")
 
-    return render_template("user_login.html")
+    return render_template("login.html")
 
-@app.route("/user_login_submit", methods=["POST"])
-def user_login_submit():
-    username = request.form.get("username")
-    if username:
-        session["user_id"] = username
-        flash(f"Logged in as user: {username}", "success")
-    else:
-        flash("Username is required.", "error")
-    return redirect(url_for("index"))
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -221,7 +222,7 @@ def register():
                       (username, generate_password_hash(password)))
             conn.commit()
             flash("Registration successful! Please log in.", "success")
-            return redirect(url_for("user_login"))
+            return redirect(url_for("login"))
         except sqlite3.IntegrityError:
             flash("Username already exists. Please choose another.", "error")
         finally:
@@ -229,14 +230,22 @@ def register():
 
     return render_template("register.html")
 
+
 @app.route("/logout")
 def logout():
     session.pop("admin", None)
-    return redirect(url_for("index"))
+    session.pop("user_id", None)
+    session.pop("username", None)
+    session.pop("role", None)
+    flash("You have been logged out.", "success")
+    return redirect(url_for("login"))
 
-@app.route("/make", methods=["GET","POST"])
+
+@app.route("/make", methods=["GET", "POST"])
 def make():
-    if not session.get("admin"):
+    # Require either admin OR user login
+    if not (session.get("admin") or session.get("username")):
+        flash("You must be logged in to create files.", "error")
         return redirect(url_for("login"))
 
     if request.method == "POST":
@@ -313,10 +322,11 @@ def make():
 
     return render_template("make.html")
 
+
 @app.route("/proxy_image/<track_id>/<filename>")
 def proxy_image(track_id, filename):
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
-    ua = request.headers.get("User-Agent","")
+    ua = request.headers.get("User-Agent", "")
     lat, lon, city, region, country = geo_ip(ip)
     user_id = session.get("user_id", "anonymous")
     insert_hit(track_id, user_id, ip, ua, lat, lon, city, region, country)
@@ -325,21 +335,23 @@ def proxy_image(track_id, filename):
         return "Not found", 404
     return send_file(fpath, mimetype="image/png")
 
+
 @app.route("/track/<track_id>")
 @limiter.limit("60 per minute")
 def track(track_id):
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
-    ua = request.headers.get("User-Agent","")
+    ua = request.headers.get("User-Agent", "")
     lat, lon, city, region, country = geo_ip(ip)
     user_id = session.get("user_id", "anonymous")
     insert_hit(track_id, user_id, ip, ua, lat, lon, city, region, country)
     png1 = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82'
     return Response(png1, mimetype="image/png")
 
+
 @app.route("/dl_pdf/<track_id>/<pdfname>")
 def dl_pdf(track_id, pdfname):
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
-    ua = request.headers.get("User-Agent","")
+    ua = request.headers.get("User-Agent", "")
     lat, lon, city, region, country = geo_ip(ip)
     user_id = session.get("user_id", "anonymous")
     insert_hit(track_id, user_id, ip, ua, lat, lon, city, region, country)
@@ -348,6 +360,7 @@ def dl_pdf(track_id, pdfname):
     if not os.path.exists(path):
         return "Not found", 404
     return send_file(path, as_attachment=True, download_name=pdfname, mimetype="application/pdf")
+
 
 @app.route("/download_generated/<name>")
 def download_generated(name):
@@ -366,6 +379,7 @@ def download_generated(name):
     else:
         mt = "application/octet-stream"
     return send_file(path, as_attachment=True, download_name=name, mimetype=mt)
+
 
 @app.route("/logs")
 def logs():
@@ -394,27 +408,29 @@ def logs():
     # Ensure you are rendering a template that contains the table structure.
     return render_template("logs.html", table_data=safe_rows)
 
+
 @app.route("/api/logs")
 def api_logs():
     if not session.get("admin"):
-        return jsonify({"error":"auth required"}), 401
+        return jsonify({"error": "auth required"}), 401
     rows = fetch_hits()
     out = []
     for r in rows:
         out.append({
-            "id": r[0], 
-            "track_id": r[1], 
-            "user_id": r[2], # Added this line
-            "ip": r[3], 
-            "ua": r[4], 
+            "id": r[0],
+            "track_id": r[1],
+            "user_id": r[2],
+            "ip": r[3],
+            "ua": r[4],
             "ts": r[5],
-            "lat": r[6], 
-            "lon": r[7], 
-            "city": r[8], 
-            "region": r[9], 
+            "lat": r[6],
+            "lon": r[7],
+            "city": r[8],
+            "region": r[9],
             "country": r[10]
         })
     return jsonify(out)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
