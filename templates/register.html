@@ -12,10 +12,14 @@
             <label for="password">Password:</label>
             <input type="password" id="password" name="password" required>
         </div>
+        <div class="mb-2">
+            <label for="confirm">Confirm Password:</label>
+            <input type="password" id="confirm" name="confirm" required>
+        </div>
         <button type="submit">Register</button>
     </form>
     <p class="mt-2">
-        Already have an account? <a href="{{ url_for('user_login') }}">Login here</a>
+        Already have an account? <a href="{{ url_for('login') }}">Login here</a>
     </p>
 </div>
 {% endblock %}

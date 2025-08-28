@@ -44,15 +44,18 @@
 <body>
   <nav>
     <a class="btn" href="{{ url_for('index') }}">Home</a>
-    <a class="btn" href="{{ url_for('make') }}">Make</a>
-    <a class="btn" href="{{ url_for('logout') }}">Logout</a>
-    {% if session.get('admin') %}
-      
-      <a class="btn" href="{{ url_for('logs') }}">Logs</a>
-      
-    {% else %}
-      <a class="btn" href="{{ url_for('login') }}">Admin Login</a>
-    {% endif %}
+{% if session.get('admin') %}
+  <a class="btn" href="{{ url_for('make') }}">Make</a>
+  <a class="btn" href="{{ url_for('logs') }}">Logs</a>
+  <a class="btn" href="{{ url_for('logout') }}">Logout</a>
+{% elif session.get('user_id') %}
+  <a class="btn" href="{{ url_for('make') }}">Make</a>
+  <a class="btn" href="{{ url_for('logs') }}">My Logs</a>
+  <a class="btn" href="{{ url_for('logout') }}">Logout</a>
+{% else %}
+  <a class="btn" href="{{ url_for('login') }}">Login</a>
+{% endif %}
+
   </nav>
 
   <hr>
