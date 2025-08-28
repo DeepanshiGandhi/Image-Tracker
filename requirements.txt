@@ -9,6 +9,7 @@ requests
 scikit-learn
 werkzeug
 geoip2
+gunicorn
 
 fastapi
 uvicorn
