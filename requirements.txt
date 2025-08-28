@@ -9,4 +9,3 @@ requests
 scikit-learn
 werkzeug
 geoip2
-hashlib
