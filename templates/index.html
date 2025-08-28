@@ -6,7 +6,6 @@
   <p><a class="btn" href="{{ url_for('make') }}">Create tracked file</a></p>
   <p>Logged in as user: {{ session.get('user_id') }}</p>
 {% else %}
-  <p><a class="btn" href="{{ url_for('login') }}">Login as admin</a></p>
-  <p><a class="btn" href="{{ url_for('user_login') }}">Login as user</a></p>
+  <p><a class="btn" href="{{ url_for('login') }}">Login</a></p>
 {% endif %}
 {% endblock %}

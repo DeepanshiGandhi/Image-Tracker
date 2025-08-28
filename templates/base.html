@@ -4,25 +4,63 @@
   <meta charset="utf-8">
   <title>{{ title or "Tracker" }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 20px; }
-    .btn { display:inline-block; padding:10px 14px; border:1px solid #ddd; border-radius:8px; text-decoration:none; margin-right:8px; }
-    .card { border:1px solid #e5e5e5; border-radius:12px; padding:16px; margin-top:12px; }
-    input, select { padding:8px; border:1px solid #ddd; border-radius:8px; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      margin: 20px;
+      background-color: #fafafa;
+    }
+    .btn {
+      display: inline-block;
+      padding: 10px 14px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      text-decoration: none;
+      color: #333;
+      background: #fff;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: #f0f0f0;
+    }
+    .card {
+      border: 1px solid #e5e5e5;
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 12px;
+      background: #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    input, select {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      width: 100%;
+      max-width: 300px;
+    }
   </style>
 </head>
 <body>
-  <div>
+  <nav>
     <a class="btn" href="{{ url_for('index') }}">Home</a>
-    {% if session.get('admin') %}
-      <a class="btn" href="{{ url_for('make') }}">Make</a>
-      <a class="btn" href="{{ url_for('logs') }}">Logs</a>
-      <a class="btn" href="{{ url_for('logout') }}">Logout</a>
-    {% else %}
-      <a class="btn" href="{{ url_for('login') }}">Admin Login</a>
-    {% endif %}
-  </div>
+{% if session.get('admin') %}
+  <a class="btn" href="{{ url_for('make') }}">Make</a>
+  <a class="btn" href="{{ url_for('logs') }}">Logs</a>
+  <a class="btn" href="{{ url_for('logout') }}">Logout</a>
+{% elif session.get('user_id') %}
+  <a class="btn" href="{{ url_for('make') }}">Make</a>
+  <a class="btn" href="{{ url_for('logs') }}">My Logs</a>
+  <a class="btn" href="{{ url_for('logout') }}">Logout</a>
+{% else %}
+  <a class="btn" href="{{ url_for('login') }}">Login</a>
+{% endif %}
+
+  </nav>
+
   <hr>
+
+  {# Flash messages section #}
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       <div class="card">
@@ -32,6 +70,9 @@
       </div>
     {% endif %}
   {% endwith %}
-  {% block content %}{% endblock %}
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
 </body>
 </html>
