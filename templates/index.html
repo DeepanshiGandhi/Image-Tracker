@@ -4,7 +4,9 @@
 <p>Create tracked PNG/SVG and wrappers (HTML & PDF). Use the PDF direct-download link to log download IPs reliably.</p>
 {% if logged_in %}
   <p><a class="btn" href="{{ url_for('make') }}">Create tracked file</a></p>
+  <p>Logged in as user: {{ session.get('user_id') }}</p>
 {% else %}
   <p><a class="btn" href="{{ url_for('login') }}">Login as admin</a></p>
+  <p><a class="btn" href="{{ url_for('user_login') }}">Login as user</a></p>
 {% endif %}
 {% endblock %}

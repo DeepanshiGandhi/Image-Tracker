@@ -2,6 +2,8 @@ import os
 import sqlite3
 import datetime
 import json
+from werkzeug.security import generate_password_hash, check_password_hash
+
 from flask import (
     Flask, render_template, request, redirect, url_for,
     send_file, jsonify, session, flash, Response
@@ -39,11 +41,12 @@ limiter.init_app(app)
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # Add 'user_id' column to the 'hits' table if it doesn't exist
+
+    # hits table
     c.execute('''CREATE TABLE IF NOT EXISTS hits (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         track_id TEXT,
-        user_id TEXT,  -- Added column
+        user_id TEXT,
         ip TEXT,
         ua TEXT,
         ts TEXT,
@@ -53,8 +56,17 @@ def init_db():
         region TEXT,
         country TEXT
     )''')
+
+    # users table
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password TEXT
+    )''')
+
     conn.commit()
     conn.close()
+
 
 init_db()
 
@@ -154,6 +166,68 @@ def login():
             return redirect(url_for("make"))
         flash("Wrong password", "error")
     return render_template("login.html")
+
+# In your app.py file
+# In your app.py file
+
+@app.route("/user_login", methods=["GET", "POST"])
+def user_login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT id, password FROM users WHERE username = ?", (username,))
+        user = c.fetchone()
+        conn.close()
+
+        if user and check_password_hash(user[1], password):
+            session["user_id"] = user[0]
+            session["username"] = username
+            flash(f"Welcome back, {username}!", "success")
+            return redirect(url_for("index"))
+        else:
+            flash("Invalid username or password", "error")
+            return redirect(url_for("user_login"))
+
+    return render_template("user_login.html")
+
+@app.route("/user_login_submit", methods=["POST"])
+def user_login_submit():
+    username = request.form.get("username")
+    if username:
+        session["user_id"] = username
+        flash(f"Logged in as user: {username}", "success")
+    else:
+        flash("Username is required.", "error")
+    return redirect(url_for("index"))
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        if not username or not password:
+            flash("Username and password are required.", "error")
+            return redirect(url_for("register"))
+
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+
+        try:
+            c.execute("INSERT INTO users (username, password) VALUES (?, ?)",
+                      (username, generate_password_hash(password)))
+            conn.commit()
+            flash("Registration successful! Please log in.", "success")
+            return redirect(url_for("user_login"))
+        except sqlite3.IntegrityError:
+            flash("Username already exists. Please choose another.", "error")
+        finally:
+            conn.close()
+
+    return render_template("register.html")
 
 @app.route("/logout")
 def logout():
