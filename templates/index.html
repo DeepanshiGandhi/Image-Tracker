@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Image Tracker</h2>
+<p>Create tracked PNG/SVG and wrappers (HTML & PDF). Use the PDF direct-download link to log download IPs reliably.</p>
+{% if logged_in %}
+  <p><a class="btn" href="{{ url_for('make') }}">Create tracked file</a></p>
+{% else %}
+  <p><a class="btn" href="{{ url_for('login') }}">Login as admin</a></p>
+{% endif %}
+{% endblock %}

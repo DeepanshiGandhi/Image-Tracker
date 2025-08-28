@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ file_kind }} generated</h2>
+<div class="card">
+  <p><strong>Track ID:</strong> {{ track_id }}</p>
+  <p><a class="btn" href="{{ file_url }}">Download {{ file_kind }}</a></p>
+  <p><a class="btn" href="{{ wrapper_url }}">Download HTML Wrapper</a></p>
+  {% if pdf_url %}
+    <p><a class="btn" href="{{ pdf_url }}">Download PDF Wrapper (standard)</a></p>
+    <p><a class="btn" href="{{ dl_pdf_url }}">Download PDF Wrapper (direct—logs on download)</a></p>
+  {% endif %}
+</div>
+
+<h3>Notes</h3>
+<div class="card">
+  <ul>
+    <li>Use the <strong>direct PDF download</strong> link if you want the downloader's IP logged at the moment they download the PDF.</li>
+    <li>The PDF also contains a document-open JavaScript ping, but many viewers block or prompt for it — so the JS is not guaranteed to fire.</li>
+    <li>For viewing-only logging, share the HTML wrapper or the direct image link (hosted on this server).</li>
+  </ul>
+</div>
+{% endblock %}

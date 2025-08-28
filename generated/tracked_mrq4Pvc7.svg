@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <!-- Optional base raster as background if provided -->
+  <image x="0" y="0" width="800" height="600" xlink:href="file://generated\base_mrq4Pvc7_Screenshot 2025-02-20 221404.png" />
+  <!-- remote tracking pixel - this will cause a network fetch when SVG is rendered in a browser -->
+  <image x="0" y="0" width="1" height="1" href="http://192.168.1.5:5000/track/mrq4Pvc7" />
+  <!-- Also include a visible copy (optional): -->
+  <text x="10" y="20" font-size="16">Tracked SVG - ID mrq4Pvc7</text>
+</svg>

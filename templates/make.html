@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Create Tracked File</h2>
+<form method="post" enctype="multipart/form-data" class="card">
+  <div>
+    <label>Mode: </label>
+    <select name="mode">
+      <option value="png" selected>PNG</option>
+      <option value="svg">SVG</option>
+    </select>
+  </div>
+  <div style="margin-top:12px;">
+    <label>Upload base image (optional): </label>
+    <input type="file" name="image" accept="image/*">
+  </div>
+  <div style="margin-top:12px;">
+    <button class="btn" type="submit">Generate</button>
+  </div>
+</form>
+{% endblock %}
