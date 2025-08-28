@@ -9,3 +9,9 @@ requests
 scikit-learn
 werkzeug
 geoip2
+
+fastapi
+uvicorn
+jinja2
+python-multipart
+reportlab
