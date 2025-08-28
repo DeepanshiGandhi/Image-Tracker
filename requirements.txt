@@ -9,3 +9,6 @@ shortuuid
 requests
 scikit-learn
 geoip2
+gunicorn
+flask
+flask-limiter
